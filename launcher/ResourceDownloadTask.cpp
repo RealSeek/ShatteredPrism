@@ -22,6 +22,7 @@
 #include "Application.h"
 
 #include "FileSystem.h"
+#include "MirrorUtils.h"
 #include "minecraft/mod/ResourceFolderModel.h"
 
 #include "minecraft/mod/ShaderPackFolderModel.h"
@@ -103,8 +104,41 @@ void ResourceDownloadTask::downloadSucceeded()
 
 void ResourceDownloadTask::downloadFailed(QString reason)
 {
-    emitFailed(reason);
+    // If mirror mode is active and we haven't tried the mirror yet, retry with mirror URL
+    if (!m_triedMirror) {
+        m_triedMirror = true;
+        QString mirrorRoot = APPLICATION->settings()->get("MirrorRootURL").toString();
+        QUrl mirrorUrl = MirrorUtils::modFallbackUrl(m_pack_version.downloadUrl, mirrorRoot);
+        if (!mirrorUrl.isEmpty()) {
+            qDebug() << "Primary download failed, retrying with mod mirror:" << mirrorUrl.toString();
+            m_filesNetJob.reset(new NetJob(tr("Resource download (mirror)"), APPLICATION->network()));
+            auto action = Net::ApiDownload::makeFile(mirrorUrl, m_pack_model->dir().absoluteFilePath(getFilename()));
+            if (!m_pack_version.hash_type.isEmpty() && !m_pack_version.hash.isEmpty()) {
+                switch (Hashing::algorithmFromString(m_pack_version.hash_type)) {
+                    case Hashing::Algorithm::Sha1:
+                        action->addValidator(new Net::ChecksumValidator(QCryptographicHash::Algorithm::Sha1, m_pack_version.hash));
+                        break;
+                    case Hashing::Algorithm::Sha256:
+                        action->addValidator(new Net::ChecksumValidator(QCryptographicHash::Algorithm::Sha256, m_pack_version.hash));
+                        break;
+                    case Hashing::Algorithm::Sha512:
+                        action->addValidator(new Net::ChecksumValidator(QCryptographicHash::Algorithm::Sha512, m_pack_version.hash));
+                        break;
+                    default:
+                        break;
+                }
+            }
+            m_filesNetJob->addNetAction(action);
+            connect(m_filesNetJob.get(), &NetJob::succeeded, this, &ResourceDownloadTask::downloadSucceeded);
+            connect(m_filesNetJob.get(), &NetJob::progress, this, &ResourceDownloadTask::downloadProgressChanged);
+            connect(m_filesNetJob.get(), &NetJob::stepProgress, this, &ResourceDownloadTask::propagateStepProgress);
+            connect(m_filesNetJob.get(), &NetJob::failed, this, &ResourceDownloadTask::downloadFailed);
+            m_filesNetJob->start();
+            return;
+        }
+    }
     m_filesNetJob.reset();
+    emitFailed(reason);
 }
 
 void ResourceDownloadTask::downloadProgressChanged(qint64 current, qint64 total)

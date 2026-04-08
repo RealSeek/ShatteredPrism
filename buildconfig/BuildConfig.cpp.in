@@ -103,6 +103,8 @@ Config::Config()
         VERSION_CHANNEL = "unknown";
     }
 
+    VERSION_CHANNEL = "RealSeek\u7248";
+
     NEWS_RSS_URL = "@Launcher_NEWS_RSS_URL@";
     NEWS_OPEN_URL = "@Launcher_NEWS_OPEN_URL@";
     HELP_URL = "@Launcher_HELP_URL@";

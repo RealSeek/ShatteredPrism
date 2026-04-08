@@ -73,6 +73,8 @@ set(CORE_SOURCES
     FileSystem.h
     FileSystem.cpp
 
+    MirrorUtils.h
+
     Exception.h
 
     # RW lock protected map

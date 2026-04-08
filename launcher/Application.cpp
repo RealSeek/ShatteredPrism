@@ -876,23 +876,43 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
             }
         }
         {
+            auto resetIfInvalid = [this](const Setting* setting) {
+                if (const QUrl url(setting->get().toString()); !url.isValid() || (url.scheme() != "http" && url.scheme() != "https")) {
+                    m_settings->reset(setting->id());
+                }
+            };
+
             // Meta URL
-            m_settings->registerSetting("MetaURLOverride", "");
-
-            QUrl metaUrl(m_settings->get("MetaURLOverride").toString());
-
-            // get rid of invalid meta urls
-            if (!metaUrl.isValid() || (metaUrl.scheme() != "http" && metaUrl.scheme() != "https"))
-                m_settings->reset("MetaURLOverride");
+            resetIfInvalid(m_settings->registerSetting("MetaURLOverride", "").get());
 
             // Resource URL
-            m_settings->registerSetting("ResourceURL", BuildConfig.DEFAULT_RESOURCE_BASE);
+            resetIfInvalid(m_settings->registerSetting({ "ResourceURLOverride", "ResourceURL" }, "").get());
 
-            QUrl resourceUrl(m_settings->get("ResourceURL").toString());
+            // Library URL
+            resetIfInvalid(m_settings->registerSetting("LibraryURLOverride", "").get());
 
-            // get rid of invalid resource urls
-            if (!resourceUrl.isValid() || (resourceUrl.scheme() != "http" && resourceUrl.scheme() != "https"))
-                m_settings->reset("ResourceURL");
+            // Legacy FML libs URL
+            resetIfInvalid(m_settings->registerSetting("LegacyFMLLibsURLOverride", "").get());
+
+            // Mirror root URL (e.g. BMCLAPI root for full URL rewriting)
+            resetIfInvalid(m_settings->registerSetting("MirrorRootURL", "").get());
+
+            // Migrate: if MirrorRootURL is empty but LibraryURLOverride looks like BMCLAPI,
+            // auto-populate MirrorRootURL for backward compatibility.
+            {
+                QString mirrorRoot = m_settings->get("MirrorRootURL").toString();
+                QString libraryUrl = m_settings->get("LibraryURLOverride").toString().trimmed();
+                if (mirrorRoot.isEmpty() && !libraryUrl.isEmpty()) {
+                    // Strip trailing slash for comparison
+                    QString normalized = libraryUrl;
+                    if (normalized.endsWith('/'))
+                        normalized.chop(1);
+                    if (normalized == QStringLiteral("https://bmclapi2.bangbang93.com/maven")) {
+                        m_settings->set("MirrorRootURL", QStringLiteral("https://bmclapi2.bangbang93.com/"));
+                        qDebug() << "Migrated LibraryURLOverride to MirrorRootURL: https://bmclapi2.bangbang93.com/";
+                    }
+                }
+            }
         }
 
         m_settings->registerSetting("CloseAfterLaunch", false);
@@ -915,6 +935,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
             m_settings->reset("CFKeyOverride");
         }
         m_settings->registerSetting("FlameKeyShouldBeFetchedOnStartup", true);
+        m_settings->registerSetting("FallbackMRBlockedMods", true);
         m_settings->registerSetting("ModrinthToken", "");
         m_settings->registerSetting("UserAgentOverride", "");
 

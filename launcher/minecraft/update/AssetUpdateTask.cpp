@@ -1,6 +1,7 @@
 #include "AssetUpdateTask.h"
 
 #include "BuildConfig.h"
+#include "MirrorUtils.h"
 #include "launch/LaunchStep.h"
 #include "minecraft/AssetsUtils.h"
 #include "minecraft/MinecraftInstance.h"
@@ -22,7 +23,7 @@ void AssetUpdateTask::executeTask()
     auto components = m_inst->getPackProfile();
     auto profile = components->getProfile();
     auto assets = profile->getMinecraftAssets();
-    QUrl indexUrl = assets->url;
+    QUrl indexUrl = MirrorUtils::rewriteUrl(QUrl(assets->url), APPLICATION->settings()->get("MirrorRootURL").toString());
     QString localPath = assets->id + ".json";
     auto job = makeShared<NetJob>(tr("Asset index for %1").arg(m_inst->name()), APPLICATION->network());
 
@@ -72,7 +73,7 @@ void AssetUpdateTask::assetIndexFinished()
 
     auto job = index.getDownloadJob();
     if (job) {
-        QString resourceURL = APPLICATION->settings()->get("ResourceURL").toString();
+        QString resourceURL = resourceUrl();
         QString source = tr("Mojang");
         if (resourceURL != BuildConfig.DEFAULT_RESOURCE_BASE) {
             source = QUrl(resourceURL).host();
@@ -109,4 +110,13 @@ bool AssetUpdateTask::abort()
         qWarning() << "Prematurely aborted AssetUpdateTask";
     }
     return true;
+}
+
+QString AssetUpdateTask::resourceUrl()
+{
+    if (const QString urlOverride = APPLICATION->settings()->get("ResourceURLOverride").toString(); !urlOverride.isEmpty()) {
+        return urlOverride;
+    }
+
+    return BuildConfig.DEFAULT_RESOURCE_BASE;
 }

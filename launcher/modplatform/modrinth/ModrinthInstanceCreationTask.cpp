@@ -15,6 +15,7 @@
 
 #include "net/ChecksumValidator.h"
 
+#include "MirrorUtils.h"
 #include "net/ApiDownload.h"
 #include "net/NetJob.h"
 #include "settings/INISettingsObject.h"
@@ -270,6 +271,24 @@ bool ModrinthCreationTask::createInstance()
             setError(tr("The file '%1' is missing a download link. This is invalid in the pack format.").arg(fileName));
             return false;
         }
+
+        // Append mod platform mirror URLs as fallback candidates
+        {
+            QString mirrorRoot = APPLICATION->settings()->get("MirrorRootURL").toString();
+            if (!mirrorRoot.isEmpty()) {
+                QQueue<QUrl> mirrorUrls;
+                for (const auto& dl : file.downloads) {
+                    QUrl mirror = MirrorUtils::modFallbackUrl(dl, mirrorRoot);
+                    if (!mirror.isEmpty()) {
+                        mirrorUrls.enqueue(mirror);
+                    }
+                }
+                for (const auto& mirror : mirrorUrls) {
+                    file.downloads.enqueue(mirror);
+                }
+            }
+        }
+
         qDebug() << "Will try to download" << file.downloads.front() << "to" << file_path;
         auto dl = Net::ApiDownload::makeFile(file.downloads.dequeue(), file_path);
         dl->addValidator(new Net::ChecksumValidator(file.hashAlgorithm, file.hash));

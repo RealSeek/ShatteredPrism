@@ -83,10 +83,10 @@ else()
         set(CMAKE_EXE_LINKER_FLAGS "-Wl,--stack,8388608 ${CMAKE_EXE_LINKER_FLAGS}")
 
         # -ffunction-sections and -fdata-sections help reduce binary size
-        # -mguard=cf enables Control Flow Guard
+        # -fcf-protection enables Control Flow Guard
         # TODO: Look into -gc-sections to further reduce binary size
         foreach(lang C CXX)
-            set("CMAKE_${lang}_FLAGS_RELEASE" "-ffunction-sections -fdata-sections -mguard=cf")
+            set("CMAKE_${lang}_FLAGS_RELEASE" "-ffunction-sections -fdata-sections -fcf-protection")
         endforeach()
     endif()
 endif()

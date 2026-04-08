@@ -65,6 +65,7 @@
 #include "meta/Index.h"
 #include "minecraft/World.h"
 #include "minecraft/mod/tasks/LocalResourceParse.h"
+#include "MirrorUtils.h"
 #include "net/ApiDownload.h"
 #include "ui/pages/modplatform/OptionalModDialog.h"
 
@@ -585,6 +586,20 @@ void FlameCreationTask::setupDownloadJob(QEventLoop& loop)
             qDebug() << "Will download" << result.version.downloadUrl << "to" << path;
             auto dl = Net::ApiDownload::makeFile(result.version.downloadUrl, path);
             m_filesJob->addNetAction(dl);
+
+            // Add mod platform mirror as fallback when mirror mode is active
+            QString mirrorRoot = APPLICATION->settings()->get("MirrorRootURL").toString();
+            QUrl mirrorUrl = MirrorUtils::modFallbackUrl(result.version.downloadUrl, mirrorRoot);
+            if (!mirrorUrl.isEmpty()) {
+                auto param = dl.toWeakRef();
+                connect(dl.get(), &Task::failed, [mirrorUrl, path, param, this] {
+                    qDebug() << "Primary download failed, trying mod mirror:" << mirrorUrl.toString();
+                    auto mdl = Net::ApiDownload::makeFile(mirrorUrl, path);
+                    m_filesJob->addNetAction(mdl);
+                    if (auto shared = param.lock())
+                        shared->succeeded();
+                });
+            }
         }
     }
 

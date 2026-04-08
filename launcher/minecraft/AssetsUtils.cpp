@@ -51,6 +51,7 @@
 #include "net/Download.h"
 
 #include "Application.h"
+#include "minecraft/update/AssetUpdateTask.h"
 #include "net/NetRequest.h"
 
 namespace {
@@ -298,7 +299,7 @@ QString AssetObject::getLocalPath()
 
 QUrl AssetObject::getUrl()
 {
-    auto resourceURL = APPLICATION->settings()->get("ResourceURL").toString();
+    auto resourceURL = AssetUpdateTask::resourceUrl();
     return resourceURL + getRelPath();
 }
 

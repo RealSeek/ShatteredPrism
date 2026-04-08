@@ -67,6 +67,9 @@ class APIPage : public QWidget, public BasePage {
     void loadSettings();
     void applySettings();
     void fetchKeyButtonPressed();
+    void onMirrorPresetChanged(int index);
+    void onMirrorUrlEdited();
+    void syncMirrorPresetFromUrls();
 
    private:
     Ui::APIPage* ui;

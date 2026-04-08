@@ -39,8 +39,62 @@
 
 #include <BuildConfig.h>
 #include <FileSystem.h>
+#include <MirrorUtils.h>
 #include <net/ApiDownload.h>
 #include <net/ChecksumValidator.h>
+
+#include "Application.h"
+
+namespace {
+
+/**
+ * @brief Normalize a base URL to ensure it ends with a trailing slash.
+ */
+QString normalizeBaseUrl(const QString& url)
+{
+    return MirrorUtils::normalizeUrl(url);
+}
+
+/**
+ * @brief Rewrite a library download URL using the mirror root.
+ * Delegates to MirrorUtils::rewriteUrl for the actual prefix matching.
+ */
+QString rewriteLibraryUrl(const QString& url, const QString& mirrorRoot)
+{
+    return MirrorUtils::rewriteUrl(url, mirrorRoot);
+}
+
+/**
+ * @brief Legacy rewrite: simple prefix-strip replacement for backward compatibility.
+ *
+ * Used when MirrorRootURL is not set but LibraryURLOverride is.
+ * Strips known library URL prefixes and replaces with the given base URL.
+ */
+QString legacyRewriteLibraryUrl(const QString& url, const QString& libraryBase)
+{
+    if (libraryBase.isEmpty()) {
+        return url;
+    }
+
+    static const QStringList knownPrefixes = {
+        QStringLiteral("https://libraries.minecraft.net/"),
+        QStringLiteral("https://maven.minecraftforge.net/"),
+        QStringLiteral("https://files.minecraftforge.net/maven/"),
+        QStringLiteral("https://maven.neoforged.net/releases/"),
+        QStringLiteral("https://maven.fabricmc.net/"),
+        QStringLiteral("https://piston-data.mojang.com/"),
+        QStringLiteral("https://launcher.mojang.com/"),
+    };
+
+    for (const auto& prefix : knownPrefixes) {
+        if (url.startsWith(prefix)) {
+            return libraryBase + url.mid(prefix.size());
+        }
+    }
+    return url;
+}
+
+}  // anonymous namespace
 
 /**
  * @brief Collect applicable files for the library.
@@ -114,6 +168,15 @@ QList<Net::NetRequest::Ptr> Library::getDownloads(const RuntimeContext& runtimeC
     bool stale = isAlwaysStale();
     bool local = isLocal();
 
+    // Snapshot the mirror root URL once for consistent rewriting.
+    // MirrorRootURL is the BMCLAPI-style root (e.g. "https://bmclapi2.bangbang93.com/"),
+    // sub-paths like /libraries/ and /maven/ are appended by rewriteLibraryUrl().
+    // Falls back to LibraryURLOverride for backward compatibility with custom mirrors.
+    const auto app = APPLICATION_DYN;
+    const QString mirrorRoot = app ? normalizeBaseUrl(app->settings()->get("MirrorRootURL").toString()) : QString();
+    const QString legacyLibraryBase =
+        (mirrorRoot.isEmpty() && app) ? normalizeBaseUrl(app->settings()->get("LibraryURLOverride").toString()) : QString();
+
     // Lambda function to check if a local file exists
     auto check_local_file = [overridePath, &failedLocalFiles](QString storage) {
         QFileInfo fileinfo(storage);
@@ -128,9 +191,17 @@ QList<Net::NetRequest::Ptr> Library::getDownloads(const RuntimeContext& runtimeC
     };
 
     // Lambda function to add a download request
-    auto add_download = [this, local, check_local_file, cache, stale, &out](QString storage, QString url, QString sha1) {
+    auto add_download = [this, local, check_local_file, cache, stale, &out, &mirrorRoot,
+                         &legacyLibraryBase](QString storage, QString url, QString sha1) {
         if (local) {
             return check_local_file(storage);
+        }
+        // Try MirrorRootURL first (BMCLAPI-style with sub-path mapping),
+        // fall back to legacy LibraryURLOverride (simple prefix-strip).
+        if (!mirrorRoot.isEmpty()) {
+            url = rewriteLibraryUrl(url, mirrorRoot);
+        } else if (!legacyLibraryBase.isEmpty()) {
+            url = legacyRewriteLibraryUrl(url, legacyLibraryBase);
         }
         auto entry = cache->resolveEntry("libraries", storage);
         if (stale) {
