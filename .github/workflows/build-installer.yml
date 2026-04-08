@@ -1,0 +1,119 @@
+name: Build Windows Installer
+
+on:
+  workflow_run:
+    workflows: ["Sync Upstream"]
+    types: [completed]
+    branches: [develop]
+  workflow_dispatch:
+    inputs:
+      build-type:
+        description: Type of build (Debug or Release)
+        type: choice
+        options:
+          - Release
+          - Debug
+        default: Release
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Windows Installer
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: windows-2022
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    env:
+      BUILD_TYPE: ${{ inputs.build-type || 'Release' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          update: true
+          install: >-
+            git
+          pacboy: >-
+            toolchain:p
+            cmake:p
+            extra-cmake-modules:p
+            ninja:p
+            qt6-base:p
+            qt6-svg:p
+            qt6-imageformats:p
+            qt6-networkauth:p
+            cmark:p
+            qrencode:p
+            tomlplusplus:p
+            libarchive:p
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 17
+
+      - name: Configure
+        env:
+          ARTIFACT_NAME: Windows-MinGW-w64-Qt6
+          BUILD_PLATFORM: RealSeek
+        run: |
+          cmake --preset windows_mingw
+
+      - name: Build
+        run: |
+          cmake --build --preset windows_mingw --config $BUILD_TYPE
+
+      - name: Install
+        run: |
+          cmake --install build --config $BUILD_TYPE
+
+      - name: Get version info
+        id: version
+        shell: bash
+        run: |
+          echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "date=$(date +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Build installer
+        shell: pwsh
+        env:
+          BUILD_DIR: build
+          INSTALL_DIR: install
+          NSCURL_VERSION: "v24.9.26.122"
+          NSCURL_SHA256: "AEE6C4BE3CB6455858E9C1EE4B3AFE0DB9960FA03FE99CCDEDC28390D57CCBB0"
+        run: |
+          New-Item -Name NSISPlugins -ItemType Directory
+          Invoke-Webrequest https://github.com/negrutiu/nsis-nscurl/releases/download/"${{ env.NSCURL_VERSION }}"/NScurl.zip -OutFile NSISPlugins\NScurl.zip
+          $nscurl_hash = Get-FileHash NSISPlugins\NScurl.zip -Algorithm Sha256 | Select-Object -ExpandProperty Hash
+          if ( $nscurl_hash -ne "${{ env.NSCURL_SHA256 }}") {
+            echo "::error:: NSCurl.zip sha256 mismatch"
+            exit 1
+          }
+          Expand-Archive -Path NSISPlugins\NScurl.zip -DestinationPath NSISPlugins\NScurl
+
+          cd ${{ env.INSTALL_DIR }}
+          makensis -NOCD "${{ github.workspace }}/${{ env.BUILD_DIR }}/program_info/win_install.nsi"
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ShatteredPrism-RealSeek-Setup-${{ steps.version.outputs.date }}-${{ steps.version.outputs.short_sha }}
+          path: ShatteredPrism-Setup.exe
+
+      - name: Upload portable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: ShatteredPrism-RealSeek-Portable-${{ steps.version.outputs.date }}-${{ steps.version.outputs.short_sha }}
+          path: install/**
