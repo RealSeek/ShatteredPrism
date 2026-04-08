@@ -260,6 +260,16 @@ void NetRequest::downloadFinished()
         emit finished();
         return;
     } else if (m_state == State::Failed) {
+        // Try fallback URL before giving up (e.g. mirror -> official source)
+        if (!m_triedFallback && m_fallbackUrl.isValid() && !m_fallbackUrl.isEmpty()) {
+            m_triedFallback = true;
+            qCWarning(logCat) << getUid().toString() << "Request failed, falling back to" << m_fallbackUrl.toString();
+            m_url = m_fallbackUrl;
+            m_state = State::Running;
+            m_sink->abort();
+            executeTask();
+            return;
+        }
         qCDebug(logCat) << getUid().toString() << "Request failed in previous step:" << m_url.toString();
         m_sink->abort();
         m_failReason = m_reply->errorString();

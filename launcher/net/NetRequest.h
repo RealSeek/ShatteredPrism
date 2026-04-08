@@ -73,6 +73,7 @@ class NetRequest : public Task {
 
     QUrl url() const;
     void setUrl(QUrl url) { m_url = url; }
+    void setFallbackUrl(const QUrl& url) { m_fallbackUrl = url; }
     int replyStatusCode() const;
     QNetworkReply::NetworkError error() const;
     QString errorString() const;
@@ -108,6 +109,9 @@ class NetRequest : public Task {
 
     /// source URL
     QUrl m_url;
+    /// fallback URL to try when mirror fails
+    QUrl m_fallbackUrl;
+    bool m_triedFallback = false;
     std::vector<std::shared_ptr<Net::HeaderProxy>> m_headerProxies;
 };
 }  // namespace Net

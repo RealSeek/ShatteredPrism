@@ -287,6 +287,11 @@ Net::NetRequest::Ptr AssetObject::getDownloadAction()
             objectDL->addValidator(new Net::ChecksumValidator(QCryptographicHash::Sha1, hash));
         }
         objectDL->setProgress(objectDL->getProgress(), size);
+        // If using mirror, set official URL as fallback
+        QUrl officialUrl = QUrl(BuildConfig.DEFAULT_RESOURCE_BASE + getRelPath());
+        if (getUrl() != officialUrl) {
+            objectDL->setFallbackUrl(officialUrl);
+        }
         return objectDL;
     }
     return nullptr;

@@ -196,6 +196,8 @@ QList<Net::NetRequest::Ptr> Library::getDownloads(const RuntimeContext& runtimeC
         if (local) {
             return check_local_file(storage);
         }
+        // Save original URL before rewriting for fallback
+        QString originalUrl = url;
         // Try MirrorRootURL first (BMCLAPI-style with sub-path mapping),
         // fall back to legacy LibraryURLOverride (simple prefix-strip).
         if (!mirrorRoot.isEmpty()) {
@@ -220,11 +222,18 @@ QList<Net::NetRequest::Ptr> Library::getDownloads(const RuntimeContext& runtimeC
         if (sha1.size()) {
             auto dl = Net::ApiDownload::makeCached(url, entry, options);
             dl->addValidator(new Net::ChecksumValidator(QCryptographicHash::Sha1, sha1));
+            if (url != originalUrl) {
+                dl->setFallbackUrl(QUrl(originalUrl));
+            }
             qDebug() << "Checksummed Download for:" << rawName().serialize() << "storage:" << storage << "url:" << url;
             out.append(dl);
         } else {
-            out.append(Net::ApiDownload::makeCached(url, entry, options));
+            auto dl = Net::ApiDownload::makeCached(url, entry, options);
+            if (url != originalUrl) {
+                dl->setFallbackUrl(QUrl(originalUrl));
+            }
             qDebug() << "Download for:" << rawName().serialize() << "storage:" << storage << "url:" << url;
+            out.append(dl);
         }
         return true;
     };

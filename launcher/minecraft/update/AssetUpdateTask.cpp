@@ -33,6 +33,10 @@ void AssetUpdateTask::executeTask()
     auto hexSha1 = assets->sha1.toLatin1();
     qDebug() << "Asset index SHA1:" << hexSha1;
     auto dl = Net::ApiDownload::makeCached(indexUrl, entry);
+    // If using mirror, set official URL as fallback
+    if (indexUrl != QUrl(assets->url)) {
+        dl->setFallbackUrl(QUrl(assets->url));
+    }
     dl->addValidator(new Net::ChecksumValidator(QCryptographicHash::Sha1, assets->sha1));
     job->addNetAction(dl);
 
