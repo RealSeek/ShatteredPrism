@@ -75,6 +75,10 @@ jobs:
         run: |
           cmake --build --preset windows_mingw --config $BUILD_TYPE
 
+      - name: Test download recovery
+        run: |
+          ctest --preset windows_mingw --build-config $BUILD_TYPE -R '^NetRequest$' --output-on-failure
+
       - name: Install
         run: |
           cmake --install build --config $BUILD_TYPE

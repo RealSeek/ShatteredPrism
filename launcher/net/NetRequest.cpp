@@ -42,6 +42,7 @@
 #include <QDateTime>
 #include <QFileInfo>
 #include <QNetworkReply>
+#include <QTimer>
 #include <QUrl>
 #include <memory>
 
@@ -95,18 +96,24 @@ void NetRequest::executeTask()
     }
 
 #if defined(LAUNCHER_APPLICATION)
-    auto user_agent = APPLICATION->getUserAgent();
+    auto user_agent = APPLICATION_DYN ? APPLICATION->getUserAgent() : BuildConfig.USER_AGENT;
 #else
     auto user_agent = BuildConfig.USER_AGENT;
 #endif
 
     request.setHeader(QNetworkRequest::UserAgentHeader, user_agent.toUtf8());
+    // ForgeCDN downloads can stall on a shared HTTP/2 connection through a proxy.
+    if (m_url.host().endsWith(QStringLiteral(".forgecdn.net")))
+        request.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
     for (auto& header_proxy : m_headerProxies) {
         header_proxy->writeHeaders(request);
     }
 
 #if defined(LAUNCHER_APPLICATION)
-    request.setTransferTimeout(APPLICATION->settings()->get("RequestTimeout").toInt() * 1000);
+    if (APPLICATION_DYN)
+        request.setTransferTimeout(APPLICATION->settings()->get("RequestTimeout").toInt() * 1000);
+    else
+        request.setTransferTimeout();
 #else
     request.setTransferTimeout();
 #endif
@@ -118,6 +125,29 @@ void NetRequest::executeTask()
     if (rep == nullptr)  // it failed
         return;
     m_reply.reset(rep);
+    m_errorResponse.clear();
+    m_failReason.clear();
+    // Also time requests waiting in Qt's connection queue, before any data arrives.
+    if (request.transferTimeout() > 0) {
+        auto idle_timer = new QTimer(rep);
+        idle_timer->setSingleShot(true);
+        idle_timer->setInterval(request.transferTimeout());
+        connect(rep, &QNetworkReply::readyRead, idle_timer, qOverload<>(&QTimer::start));
+        connect(rep, &QNetworkReply::uploadProgress, idle_timer, [idle_timer, previous = qint64(0)](qint64 sent, qint64) mutable {
+            if (sent > previous)
+                idle_timer->start();
+            previous = sent;
+        });
+        connect(rep, &QNetworkReply::finished, idle_timer, &QTimer::stop);
+        connect(idle_timer, &QTimer::timeout, this, [this, rep] {
+            m_failReason = tr("Request timed out: %1").arg(m_url.toString());
+            qCCritical(logCat) << getUid().toString() << m_failReason;
+            m_state = State::Failed;
+            disconnect(rep, &QNetworkReply::errorOccurred, this, &NetRequest::downloadError);
+            rep->abort();
+        });
+        idle_timer->start();
+    }
     connect(rep, &QNetworkReply::uploadProgress, this, &NetRequest::onProgress);
     connect(rep, &QNetworkReply::downloadProgress, this, &NetRequest::onProgress);
     connect(rep, &QNetworkReply::finished, this, &NetRequest::downloadFinished);
@@ -272,8 +302,9 @@ void NetRequest::downloadFinished()
         }
         qCDebug(logCat) << getUid().toString() << "Request failed in previous step:" << m_url.toString();
         m_sink->abort();
-        m_failReason = m_reply->errorString();
-        emit failed(m_reply->errorString());
+        if (m_failReason.isEmpty())
+            m_failReason = tr("%1: %2").arg(m_url.toString(), m_reply->errorString());
+        emit failed(m_failReason);
         emit finished();
         return;
     } else if (m_state == State::AbortedByUser) {

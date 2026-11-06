@@ -585,32 +585,25 @@ void FlameCreationTask::setupDownloadJob(QEventLoop& loop)
         if (!result.version.downloadUrl.isEmpty()) {
             qDebug() << "Will download" << result.version.downloadUrl << "to" << path;
             auto dl = Net::ApiDownload::makeFile(result.version.downloadUrl, path);
-            m_filesJob->addNetAction(dl);
-
             // Add mod platform mirror as fallback when mirror mode is active
             QString mirrorRoot = APPLICATION->settings()->get("MirrorRootURL").toString();
             QUrl mirrorUrl = MirrorUtils::modFallbackUrl(result.version.downloadUrl, mirrorRoot);
-            if (!mirrorUrl.isEmpty()) {
-                auto param = dl.toWeakRef();
-                connect(dl.get(), &Task::failed, [mirrorUrl, path, param, this] {
-                    qDebug() << "Primary download failed, trying mod mirror:" << mirrorUrl.toString();
-                    auto mdl = Net::ApiDownload::makeFile(mirrorUrl, path);
-                    m_filesJob->addNetAction(mdl);
-                    if (auto shared = param.lock())
-                        shared->succeeded();
-                });
-            }
+            if (!mirrorUrl.isEmpty())
+                dl->setFallbackUrl(mirrorUrl);
+            m_filesJob->addNetAction(dl);
         }
     }
 
-    connect(m_filesJob.get(), &NetJob::finished, this, [this, &loop]() {
+    connect(m_filesJob.get(), &NetJob::succeeded, this, [this, &loop]() {
         m_filesJob.reset();
         validateOtherResources(loop);
     });
-    connect(m_filesJob.get(), &NetJob::failed, [this](QString reason) {
+    connect(m_filesJob.get(), &NetJob::failed, this, [this, &loop](QString reason) {
         m_filesJob.reset();
         setError(reason);
+        loop.quit();
     });
+    connect(m_filesJob.get(), &NetJob::aborted, &loop, &QEventLoop::quit);
     connect(m_filesJob.get(), &NetJob::progress, this, [this](qint64 current, qint64 total) {
         setDetails(tr("%1 out of %2 complete").arg(current).arg(total));
         setProgress(current, total);
