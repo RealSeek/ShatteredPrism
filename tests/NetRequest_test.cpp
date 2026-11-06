@@ -81,7 +81,7 @@ class NetRequestTest : public QObject {
     void stalledRequestFails()
     {
         auto request = makeShared<QueuedRequest>();
-        NetJob job("stalled download", {}, 1);
+        NetJob job("stalled download", nullptr, 1);
         job.setAskRetry(false);
         job.setAutoRetryLimit(1);
         job.addNetAction(request);
@@ -101,7 +101,7 @@ class NetRequestTest : public QObject {
         auto request = makeShared<QueuedRequest>();
         const QUrl fallback("https://mirror.example/mod.jar");
         request->setFallbackUrl(fallback);
-        NetJob job("fallback download", {}, 1);
+        NetJob job("fallback download", nullptr, 1);
         job.addNetAction(request);
         QSignalSpy failed(&job, &Task::failed);
         QSignalSpy succeeded(&job, &Task::succeeded);
@@ -121,7 +121,7 @@ class NetRequestTest : public QObject {
         auto request = makeShared<QueuedRequest>();
         request->fallbackSucceeds = false;
         request->setFallbackUrl(QUrl("https://mirror.example/mod.jar"));
-        NetJob job("failed fallback", {}, 1);
+        NetJob job("failed fallback", nullptr, 1);
         job.setAskRetry(false);
         job.setAutoRetryLimit(1);
         job.addNetAction(request);
